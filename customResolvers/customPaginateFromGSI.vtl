@@ -1,0 +1,20 @@
+
+{
+  "version": "2017-02-28",
+  "operation": "Query",
+	"index": "productId-createdAt-index",
+"scanIndexForward": false,
+    "query" : {
+    "expression": "productId = :prodId and createdAt > :timeStampN",
+    "expressionValues" : {
+      ":prodId" : {
+        "S" : "${ctx.args.id}"
+      },
+      ":timeStampN" : {
+        "N" : "${ctx.args.startFrom}"
+      }
+    }
+  },
+  "filter": #if($context.args.filter) $util.transform.toDynamoDBFilterExpression($ctx.args.filter) #else null #end,
+  "limit": $util.defaultIfNull($ctx.args.limit, 20),
+}
