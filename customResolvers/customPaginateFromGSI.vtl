@@ -1,20 +1,36 @@
+ #set( $startFromTime = $util.defaultIfNull($context.args.startFromTime, 0) )
+    {
+        "version" : "2017-02-28",
+        "operation" : "Query",
+        "index" : "postID-addedTime-index",
+        "query" : {
+          "expression": "postID = :postID and addedTime > :startFrom",
+            "expressionValues" : {
+              ":postID" : { "S" : "$context.source.id" },
+              ":startFrom" : { "N" : "$startFromTime" }
+            }
+        },
+        "scanIndexForward":   #if( $context.args.sortDirection )
+          #if( $context.args.sortDirection == "ASC" )
+              true
+          #else
+              false
+          #end
+        #else
+            true
+        #end,
 
-{
-  "version": "2017-02-28",
-  "operation": "Query",
-	"index": "productId-createdAt-index",
-"scanIndexForward": false,
-    "query" : {
-    "expression": "productId = :prodId and createdAt > :timeStampN",
-    "expressionValues" : {
-      ":prodId" : {
-        "S" : "${ctx.args.id}"
-      },
-      ":timeStampN" : {
-        "N" : "${ctx.args.startFrom}"
-      }
+        #if( ${context.arguments.count} )
+            ,"limit": ${context.arguments.count}
+        #end
+        #if( ${context.arguments.nextToken} )
+            ,"nextToken": "${context.arguments.nextToken}"
+        #end
     }
-  },
-  "filter": #if($context.args.filter) $util.transform.toDynamoDBFilterExpression($ctx.args.filter) #else null #end,
-  "limit": $util.defaultIfNull($ctx.args.limit, 20),
+
+    {
+    "items": $utils.toJson($context.result.items)
+    #if( ${context.result.nextToken} )
+        ,"nextToken": "${context.result.nextToken}"
+    #end
 }
