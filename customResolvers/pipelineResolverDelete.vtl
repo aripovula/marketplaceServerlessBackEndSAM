@@ -1,0 +1,117 @@
+Before mapping template.
+Runs before any functions in the resolver are invoked.
+
+
+$util.qr($ctx.stash.put("goodID", $ctx.args.input.id))
+{}
+Functions
+Each function is executed in sequence and can execute a single operation against a data source.
+Move up
+Move down
+Remove
+Add function
+FetchGoodsRatingIDsedit
+
+Description
+-
+Data Source
+RatingTable
+
+Request Mapping Template read-only
+
+{
+    "version" : "2017-02-28",
+    "operation" : "Query",
+    "index" : "goodID-addedTime-index",
+    "query" : {
+      "expression": "goodID = :goodID",
+        "expressionValues" : {
+          ":goodID" : { "S" : "${context.stash.goodID}" }
+        }
+    }
+}
+
+Response Mapping Template read-only
+
+## {
+##     "items": $utils.toJson($context.result.items)
+## }
+$util.toJson($ctx.result)
+DeleteGoodsRatingsedit
+
+Description
+-
+Data Source
+RatingTable
+
+Request Mapping Template read-only
+
+#set($ids = [])
+#foreach($id in $context.prev.result.items)
+    #set( $item = $util.dynamodb.toMapValues(
+        { "goodID" : $context.stash.goodID,
+        "ratingID" : $id.ratingID }
+    ) )
+    $util.qr($ids.add($item))
+#end
+​
+{
+    "version" : "2018-05-29",
+    "operation" : "BatchDeleteItem",
+    "tables" : {
+        "RatingTable": $util.toJson($ids)
+    ##     [
+    ##     {
+    ##       "goodID": {
+    ##         "S": "fe366832-90d8-4ad9-9aca-3ad7bc6dc9ec"
+    ##       },
+    ##       "ratingID": {
+    ##         "S": "r1"
+    ##       }
+    ##     },
+    ## ]
+    }
+}
+​
+
+Response Mapping Template read-only
+
+#if($context.error)
+    $util.error($context.error.message, $context.error.type)
+    #return
+#end
+​
+$util.toJson($ctx.result.data.Ratings)
+DeleteGoodedit
+
+Description
+-
+Data Source
+GoodTable
+
+Request Mapping Template read-only
+
+{
+  "version": "2017-02-28",
+  "operation": "DeleteItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDBJson($context.stash.goodID),
+  },
+}
+
+Response Mapping Template read-only
+
+## Raise a GraphQL field error in case of a datasource invocation error
+#if($ctx.error)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+## Pass back the result from DynamoDB. **
+$util.toJson($ctx.result)
+
+After mapping template.
+Runs after all functions in the pipeline have finished.
+
+## The after mapping template is used to collect the final value that is returned by the resolver. 
+$util.toJson($ctx.result)
+## The after mapping template is used to collect the final value that is returned by the resolver. 
+$util.toJson($ctx.result)
