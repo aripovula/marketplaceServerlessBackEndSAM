@@ -70,7 +70,7 @@ exports.handler = (event, context, callback) => {
             if (err) {
                 console.log(err);
                 callback(null, "offer_query_failed");
-            } else {
+            } else if (data.Items && data.Items[0] && data.Items[0].price.N) {
                 // if query is succesful find the best offer based on BestOfferType
                 console.log('data OfferTable query result', data);
                 let theOffer;
@@ -124,6 +124,9 @@ exports.handler = (event, context, callback) => {
                 console.log('price offer ', data.Items[0].price.N, )
                 console.log('available offer ', data.Items[0].available.N, )
                 console.log('productID offer ', data.Items[0].productID.S, )
+            } else {
+                console.log("offer_query_data_not_valid");
+                callback(null, "offer_query_data_not_valid");
             }
         });
 
@@ -147,6 +150,7 @@ const sendToInvoke = async (event, theOrder, theOffer) => {
     const result = await invokeAppSyncNewDeal(theOrder, theOffer);
     const result2 = await invokeAppSyncUpdateOffer(theOrder, theOffer);
     const result3 = await invokeAppSyncUpdateOrder(theOrder, theOffer);
+    const result4 = await invokeAppSyncNotifySeller(theOrder, theOffer);
 
     console.log('result = ', result);
     // console.log('result.erors = ', result.data.erors[0]);
@@ -163,7 +167,7 @@ const invokeAppSyncNewDeal = async (theOrder, theOffer) => {
         "variables": {
             "input": {
                 productID: theOrder.productID.S,
-                dealID: uuid(),
+                dealID: new Date() * 1, // uuid(),
                 orderID: theOrder.orderID.S,
                 buyerID: theOrder.companyID.S,
                 producerID: theOffer.companyID.S,
@@ -221,13 +225,41 @@ const invokeAppSyncUpdateOrder = async (theOrder, theOffer) => {
     req.headers.host = 'abc.appsync-api.us-east-1.amazonaws.com';
     req.headers['Content-Type'] = 'multipart/form-data';
     req.body = JSON.stringify({
-        "query": "mutation ($input: UpdateOrderInput!) { updateOrder(input: $input){companyID,orderID,productID,product{id,name,modelNo,specificationURL,imageURL,lastTenRatingAverage},status,maxPrice,quantity,bestOfferType,secondBestOfferType,minProductRating,isCashPayment } }",
+        "query": "mutation ($input: UpdateOrderInput!) { updateOrder(input: $input){companyID,orderID,productID,product{id,name,modelNo,specificationURL,imageURL,lastTenRatingAverage},status,maxPrice,quantity,bestOfferType,secondBestOfferType,minProductRating,isCashPayment,dealPrice,note } }",
         "variables": {
             "input": {
                 companyID: theOrder.companyID.S,
                 orderID: theOrder.orderID.S,
-                maxPrice: parseFloat(theOffer.price.N),
+                dealPrice: parseFloat(theOffer.price.N),
                 status: "DEAL_MADE"
+            }
+        }
+    });
+    console.log("req.body--", req.body);
+    let signer = new AWS.Signers.V4(req, 'appsync', true);
+    signer.addAuthorization(AWS.config.credentials, AWS.util.date.getDate());
+    const result = await axios({
+        method: 'post',
+        url: 'https://abc.appsync-api.us-east-1.amazonaws.com/graphql',
+        data: req.body,
+        headers: req.headers
+    });
+    return result;
+};
+
+const invokeAppSyncNotifySeller = async (theOrder, theOffer) => {
+    let req = new AWS.HttpRequest('https://abc.appsync-api.us-east-1.amazonaws.com/graphql', 'us-east-1');
+    req.method = 'POST';
+    req.headers.host = 'abc.appsync-api.us-east-1.amazonaws.com';
+    req.headers['Content-Type'] = 'multipart/form-data';
+    req.body = JSON.stringify({
+        "query": "mutation ($input: CreateNotificationInput!) { createNotification(input: $input){companyID,notificationID,notificationTextRegular,notificationTextHighlighted } }",
+        "variables": {
+            "input": {
+                companyID: theOrder.companyID.S,
+                notificationID: new Date() * 1, // uuid(),
+                notificationTextRegular: theOrder.quantity.N + ' were sold at ' + theOffer.price.N,
+                notificationTextHighlighted: 'status: confirmed'
             }
         }
     });
