@@ -6,7 +6,6 @@ const dynamodb = new AWS.DynamoDB({
     apiVersion: '2012-08-10'
 });
 
-
 exports.handler = (event, context, callback) => {
 
     console.log('event = ', event);
@@ -17,14 +16,6 @@ exports.handler = (event, context, callback) => {
             callback(null, "data_not_valid");
         }
 
-        // AWS.config.update({
-        //     region: process.env.AppSyncRegion,
-        //     credentials: new AWS.Credentials({
-        //         accessKeyId: process.env.AccessKeyId,
-        //         secretAccessKey: process.env.SecretAccessKey,
-        //     })
-        // });
-
         // console.log('Order details: ', event);
         // console.log('eventName', event.Records[0].eventName);
         // console.log('object', event.Records[0].dynamodb);
@@ -34,190 +25,279 @@ exports.handler = (event, context, callback) => {
         // console.log('productID', event.Records[0].dynamodb.NewImage.productID.S);
         // console.log('quantity', event.Records[0].dynamodb.NewImage.quantity.N);
 
-        const theOrder = event.Records[0].dynamodb.NewImage;
-        const bestOfferType = event.Records[0].dynamodb.NewImage.bestOfferType.S;
-        const productIDFromUser = event.Records[0].dynamodb.NewImage.productID.S;
-        const priceFromUserStr = event.Records[0].dynamodb.NewImage.maxPrice.N;
-        const minProductRating = parseFloat(event.Records[0].dynamodb.NewImage.minProductRating.N);
-        const priceFromUser = parseFloat(priceFromUserStr);
-        const quantityDemandedStr = event.Records[0].dynamodb.NewImage.quantity.N;
-        const quantityDemanded = parseInt(quantityDemandedStr);
-        const orderID = event.Records[0].dynamodb.NewImage.orderID.S;
-        let dealsForRating;
-        console.log('productIDFromUser - ', productIDFromUser);
+        queryDataFindBestOfferAndSendBack(event, callback);
 
-
-        if (bestOfferType == "OPTIMAL" || bestOfferType == "CUSTOM") {
-            if (productIDFromUser) {
-                const paramsDeals = {
-                    TableName: 'DealTable',
-                    KeyConditionExpression: "productID = :a",
-                    ExpressionAttributeValues: {
-                        ":a": {
-                            S: productIDFromUser
-                        }
-                    },
-                    ProjectionExpression: "dealID, producerID, productRatingByBuyer, dealTime",
-                };
-
-                dynamodb.query(paramsDeals, function (err, data) {
-                    if (err) {
-                        console.log(null, 'deals_query_error-' + err);
-                        callback(null, "dealsForRating_deals_offer_query_failed");
-                    } else if (data.Items && data.Items[0] && data.Items[0].productRatingByBuyer.N) {
-                        dealsForRating = JSON.parse(JSON.stringify(data));
-                        console.log('dealsForRating - ', dealsForRating);
-                    }
-                });
-            }
-        }
-
-
-
-        // read all Offers for ordered product
-        const paramsOffer = {
-            TableName: 'OfferTable',
-            IndexName: "productID-price-index",
-            KeyConditionExpression: "productID = :a and price < :maxPrice",
-            ExpressionAttributeValues: {
-                ":a": {
-                    S: productIDFromUser
-                },
-                ":maxPrice": {
-                    N: priceFromUserStr
-                }
-            },
-            ProjectionExpression: "companyID, offerID, available, price, productID",
-            ScanIndexForward: false
-        };
-
-        dynamodb.query(paramsOffer, function (err, data) {
-            if (err) {
-                console.log(null, 'query_error-' + err);
-                callback(null, "offer_query_failed");
-            } else if (data.Items && data.Items[0] && data.Items[0].price.N) {
-                // if query is succesful find the best offer based on BestOfferType
-                console.log('data OfferTable query result', data);
-                let theOffer;
-                let minPrice = 1000000;
-                let companyID;
-                let offerID;
-                if (isVolumeAvailable(data, quantityDemanded)) {
-                    if (bestOfferType === 'CHEAPEST') {
-                        theOffer = findCheapestOffer(data, minPrice, quantityDemanded);
-                        if (theOrder && theOffer) {
-                            invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal');
-                        } else {
-                            console.log("offer_or_order_not_valid");
-                            callback(null, "offer_or_order_not_valid");
-                        }
-
-                    } else if (bestOfferType === 'OPTIMAL') {
-                        theOffer = findCheapestOfferWithMinRating(callback, data, minPrice, minProductRating, dealsForRating, quantityDemanded);
-                        if (theOrder && theOffer) {
-                            invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal');
-                        } else if (!theOffer && theOrder) {
-                            theOffer = findCheapestOffer(data, minPrice, quantityDemanded);
-                            if (theOrder && theOffer) {
-                                invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal');
-                            } else {
-                                console.log("offer_or_order_not_valid");
-                                callback(null, "offer_or_order_not_valid");
-                            }
-                        } else {
-                            console.log("offer_or_order_not_valid");
-                            callback(null, "offer_or_order_not_valid");
-                        }
-                    }
-                } else {
-                    invokeMutationsForGivenType(event, theOrder, theOffer, 'Insufficient');
-                }
-
-            } else if (data.Items && data.Items.length === 0) {
-                console.log("offer_query_data_not_valid data -", data);
-                console.log("offer_query_data_not_valid data.Items", data.Items.length);
-                console.log("offer_query_data_not_valid data.Items", data.Items);
-                invokeMutationsForGivenType(event, theOrder, null, 'NotOffered');
-            } else {
-                console.log("offer_query_data_not_valid data -", data);
-                if (data.Items) {
-                    console.log("offer_query_data_not_valid data.Items", data.Items.length);
-                    console.log("offer_query_data_not_valid data.Items", data.Items);
-                }
-                callback(null, "offer_query_data_not_valid");
-            }
-        });
-
-        // }
-        // });
     } else {
         callback(null, "only_insert_is_processed");
     }
-};
-
-const isVolumeAvailable = (data, quantityDemanded) => {
-    let isAvailable = false;
-    data.Items.map((item) => {
-        console.log('before condition-', item.available.N, quantityDemanded);
-        if (parseInt(item.available.N) > quantityDemanded) {
-            isAvailable = true;
-        }
-    });
-    return isAvailable;
 }
 
-const findCheapestOffer = (data, minPrice, quantityDemanded) => {
-    let theOffer;
-    data.Items.map((item) => {
-        console.log('before condition-', item.price.N, minPrice, item.available.N, quantityDemanded);
-        if (parseFloat(item.price.N) <= minPrice && parseInt(item.available.N) >= quantityDemanded) {
-            theOffer = item;
-            console.log("in map offer is ", theOffer);
+const queryDataFindBestOfferAndSendBack = async (event, callback) => {
+    const theOrder = event.Records[0].dynamodb.NewImage;
+    const bestOfferType = event.Records[0].dynamodb.NewImage.bestOfferType.S;
+    const secondBestOfferType = event.Records[0].dynamodb.NewImage.secondBestOfferType.S;
+    const productIDFromUser = event.Records[0].dynamodb.NewImage.productID.S;
+    const maxPriceFromUserStr = event.Records[0].dynamodb.NewImage.maxPrice.N;
+    const minProductRating = parseFloat(event.Records[0].dynamodb.NewImage.minProductRating.N);
+    const maxPriceFromUser = parseFloat(maxPriceFromUserStr);
+    const quantityDemandedStr = event.Records[0].dynamodb.NewImage.quantity.N;
+    const quantityDemanded = parseInt(quantityDemandedStr);
+    const orderID = event.Records[0].dynamodb.NewImage.orderID.S;
+    let dealsForRating = await getDealForRating(callback, bestOfferType, productIDFromUser);
+    console.log('productIDFromUser - ', productIDFromUser);
+
+
+    // read all Offers for ordered product
+    const paramsOffer = {
+        TableName: 'OfferTable',
+        IndexName: "productID-price-index",
+        KeyConditionExpression: "productID = :a and price < :maxPrice",
+        ExpressionAttributeValues: {
+            ":a": {
+                S: productIDFromUser
+            },
+            ":maxPrice": {
+                N: maxPriceFromUserStr
+            }
+        },
+        ProjectionExpression: "companyID, offerID, available, price, productID",
+        ScanIndexForward: false
+    };
+
+    dynamodb.query(paramsOffer, function (err, data) {
+        if (err) {
+            console.log(null, 'query_error-' + err);
+            callback(null, "offer_query_failed");
+        } else if (data.Items && data.Items[0] && data.Items[0].price.N) {
+
+            // if query is succesful find the best offer based on BestOfferType
+            console.log('data OfferTable query result', data);
+            let theOffer;
+            let minPrice = 1000000;
+            let companyID;
+            let offerID;
+            console.log('data b4 available filter ', data);
+            const NewItems = data.Items.filter((item) => parseInt(item.available.N) >= quantityDemanded);
+            data = {
+                Items: NewItems
+            }
+            console.log('data after available filter ', data);
+            if (data.Items && data.Items.length > 0) {
+                if (bestOfferType === 'CHEAPEST') {
+                    theOffer = findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
+                } else if (bestOfferType === 'OPTIMAL') {
+                    theOffer = findCheapestOfferWithMinRating(callback, data, minPrice, minProductRating, dealsForRating, quantityDemanded);
+                    if (!theOffer) theOffer = trySecondBestOption(callback, data, dealsForRating, minPrice, minProductRating, maxPriceFromUser, quantityDemanded, secondBestOfferType);
+                } else if (bestOfferType === 'HIGHESTRATING') {
+                    theOffer = findHighestRatedOffer(callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded);
+                } else if (bestOfferType === 'CUSTOM') {
+                    theOffer = findBestOfferWithCustomSettings(callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded);
+                    if (!theOffer) theOffer = trySecondBestOption(callback, data, dealsForRating, minPrice, minProductRating, maxPriceFromUser, quantityDemanded, secondBestOfferType);
+                }
+                if (theOrder && theOffer) {
+                    invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal');
+                } else {
+                    console.log("offer_or_order_not_valid");
+                    callback(null, "offer_or_order_not_valid");
+                }
+
+            } else {
+                invokeMutationsForGivenType(event, theOrder, theOffer, 'Insufficient');
+            }
+        } else if (data.Items && data.Items.length === 0) {
+            console.log("offer_query_data_not_valid data -", data);
+            console.log("offer_query_data_not_valid data.Items", data.Items.length);
+            console.log("offer_query_data_not_valid data.Items", data.Items);
+            invokeMutationsForGivenType(event, theOrder, null, 'NotOffered');
+        } else {
+            console.log("offer_query-data_not_valid-data -", data);
+            if (data.Items) {
+                console.log("offer_query-data_not_valid-data.Items", data.Items.length);
+                console.log("offer_query-data_not_valid-data.Items", data.Items);
+            }
+            callback(null, "offer_query_data_not_valid");
         }
     });
-    // in real life app I would add code that would find cheapest offer with best rating if 
-    // there are two offers with the same lowest price. Forr simplicity I skipped this.
+
+};
+
+const getDealForRating = async (callback, bestOfferType, productIDFromUser) => {
+    let dealsForRating;
+    if (bestOfferType == "OPTIMAL" || bestOfferType == "CUSTOM") {
+        if (productIDFromUser) {
+            const paramsDeals = {
+                TableName: 'DealTable',
+                KeyConditionExpression: "productID = :a",
+                ExpressionAttributeValues: {
+                    ":a": {
+                        S: productIDFromUser
+                    }
+                },
+                ProjectionExpression: "dealID, producerID, productRatingByBuyer, dealTime",
+            };
+
+            dynamodb.query(paramsDeals, function (err, data) {
+                if (err) {
+                    console.log(null, 'deals_query_error-' + err);
+                    callback(null, "dealsForRating_deals_offer_query_failed");
+                } else if (data.Items && data.Items[0] && data.Items[0].productRatingByBuyer.N) {
+                    dealsForRating = JSON.parse(JSON.stringify(data));
+                    console.log('dealsForRating 1- ', dealsForRating);
+                }
+            });
+        }
+    }
+}
+
+const trySecondBestOption = (callback, data, dealsForRating, minPrice, minProductRating, maxPriceFromUser, quantityDemanded, secondBestOfferType) => {
+    if (secondBestOfferType === 'CHEAPEST') {
+        return findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
+    } else if (secondBestOfferType === 'HIGHESTRATING') {
+        findHighestRatedOffer(callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded);
+    }
+}
+
+const findAllHighestRatedOffers = (data) => {
+    let minRating = 0;
+    // find lowest rating
+    data.Items.map((item) => {
+        if (item.lastTenAverageRating >= minRating) {
+            minRating = item.lastTenAverageRating;
+        }
+    });
+    // find all at this highest rating
+    let highestRatedOffers = [];
+    highestRatedOffers.Items.map((item) => {
+        if (item.lastTenAverageRating == minRating) {
+            highestRatedOffers.push(item);
+        }
+    });
+    return highestRatedOffers;
+}
+
+const findAllCheapestOffers = (data) => {
+    // find the cheapest price
+    let minPrice = 1000000;
+    data.Items.map((item) => {
+        if (parseFloat(item.price.N) <= minPrice) {
+            minPrice = parseFloat(item.price.N);
+        }
+    });
+
+    // check if two or more offers at same cheapest price exist 
+    let cheapestOffers = [];
+    data.Items.map((item) => {
+        if (parseFloat(item.price.N) === minPrice) {
+            cheapestOffers.push(item);
+        }
+    });
+    return cheapestOffers;
+}
+
+const findCheapestOffer = (callback, data, dealsForRating, minPrice, quantityDemanded) => {
+    let theOffer;
+    // find the cheapest price
+    let cheapestOffers = findAllCheapestOffers(data);
+
+    // if one - return cheapest one
+    if (cheapestOffers.length == 1) {
+        theOffer = cheapestOffers[0];
+        // if more than one - select cheapest one with highest rating
+    } else if (cheapestOffers.length > 1) {
+        cheapestOffers = addAverageRatingToOffersByCompany(callback, cheapestOffers, dealsForRating);
+        cheapestOffers = findAllHighestRatedOffers(cheapestOffers);
+        theOffer = cheapestOffers[0];
+    }
     return theOffer;
 }
 
 const findCheapestOfferWithMinRating = (callback, data, minPrice, minProductRating, dealsForRating, quantityDemanded) => {
-    if (data.Items && dealsForRating.Items) {
-        let theOffer;
-        data.Items.map((item) => {
-            console.log('before condition-', item.price.N, minPrice, item.available.N, quantityDemanded);
+    let theOffer;
+    if (data) console.log('b4 condition3 (data)', data);
+    if (dealsForRating) console.log('b4 condition3 (dealsForRating)', dealsForRating);
+    if (data && data.Items && dealsForRating && dealsForRating.Items) {
+        data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
+        if (data) console.log('after addAverageRatingToOffersByCompany - data-', data);
+        data = data.Items.filter((item) => item.lastTenAverageRating >= minProductRating);
+        theOffer = findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
+    }
+    return theOffer;
+}
 
-            let count = 0,
-                total = 0;
-            let theRating;
-            let allCompanyProductRatings = [];
-            dealsForRating.Items.map((deal) => {
-                if (deal.producerID == item.companyID) allCompanyProductRatings.push({
-                    rating: deal.productRatingByBuyer,
-                    time: deal.dealTime
-                });
-            });
-            allCompanyProductRatings.sort((a, b) => b.time.localeCompare(a.time)).map((deal) => {
-                count++;
-                if (count < 11) {
-                    total = total + deal.rating;
+const findHighestRatedOffer = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
+    let theOffer;
+    data = data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser);
+    data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
+    // find the highest rating among offers
+    let highestRatedOffers = findAllHighestRatedOffers(data);
+
+    // if one - return cheapest one
+    if (highestRatedOffers.length == 1) {
+        theOffer = highestRatedOffers[0];
+        // if more than one - select cheapest one
+    } else if (highestRatedOffers.length > 1) {
+        highestRatedOffers = findAllCheapestOffers(highestRatedOffers);
+        theOffer = highestRatedOffers[0];
+    }
+    return theOffer;
+}
+
+const findBestOfferWithCustomSettings = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
+    let theOffer;
+    if (data && data.Items && dealsForRating && dealsForRating.Items) {
+        data = data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser);
+        data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
+        data = data.Items.filter((item) => item.lastTenAverageRating >= minProductRating);
+        theOffer = findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
+    }
+    return theOffer;
+}
+
+const addAverageRatingToOffersByCompany = (callback, offersForProduct, dealsForRating) => {
+    if (offersForProduct && offersForProduct.Items && dealsForRating && dealsForRating.Items) {
+        for (let x = 0; x < offersForProduct.length; x++) {
+            for (let y = 0; y < dealsForRating.length; y++) {
+                if (offersForProduct[x].companyID === dealsForRating[y].producerID) {
+                    offersForProduct[x]["lastTenAverageRating"] = getLastTenAverageRating(offersForProduct[x].companyID, dealsForRating);
                 }
-            });
-            theRating = total / 10;
-            console.log('total, rating ', total, theRating);
-            if (parseFloat(item.price.N) <= minPrice &&
-                parseInt(item.available.N) >= quantityDemanded &&
-                theRating >= minProductRating) {
-                theOffer = item;
-                console.log("in map offer is ", theOffer);
+            }
+        }
+    }
+    return offersForProduct;
+}
+
+const getLastTenAverageRating = (coID, dealsForRating) => {
+    console.log('getLastTenAverageRating -coID, dealsForRating -', coID, dealsForRating);
+    let theRating = 0; // 0 is an initial rating for a product that does not have a rating.
+    // sort out deals for this coID
+    if (coID && dealsForRating && dealsForRating.Items) {
+        let count = 0,
+            total = 0;
+        let allCompanyProductRatings = [];
+        dealsForRating.Items.map((deal) => {
+            if (deal.producerID.S == coID) {
+                allCompanyProductRatings.push({
+                    rating: parseFloat(deal.productRatingByBuyer.N),
+                    time: parseInt(deal.dealTime.N)
+                });
             }
         });
-        return theOffer;
-    } else {
-        console.log('data.Items_or_dealsForRating.Items_not_defined');
-        callback(null, 'data.Items_or_dealsForRating.Items_not_defined');
+        console.log('allCompanyProductRatings sorted', allCompanyProductRatings.sort((a, b) => b.time - a.time));
+        // sort result by time
+        // calculate average rating
+
+        allCompanyProductRatings.sort((a, b) => b.time - a.time).map((deal) => {
+            count++;
+            console.log('count++', count);
+            if (count < 11) {
+                total = total + deal.rating;
+                console.log('in count<11 total -', total, deal.rating.N);
+            }
+        });
+        console.log('total, rating ', total, theRating);
+        theRating = total / count;
     }
-    // in real life app I would add code that would find cheapest offer with best rating if 
-    // there are two offers with the same lowest price. Forr simplicity I skipped this.
+    return theRating;
 }
 
 const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationType) => {
@@ -263,7 +343,7 @@ const getQueryTextForNewDeal = (theOrder, theOffer) => {
                 blockchainBlockID: "A",
                 dealStatus: "DEAL_MADE",
                 blockchainBlockStatus: "INITIATED",
-                productRatingByBuyer: Math.floor(Math.random() * (4.8 - 4.4 + 1)) + 4.4
+                productRatingByBuyer: ((Math.random() * (4.8 - 4.4)) + 4.4).toFixed(2)
             }
         }
     });
