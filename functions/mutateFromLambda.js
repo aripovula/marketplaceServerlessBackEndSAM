@@ -16,14 +16,14 @@ exports.handler = (event, context, callback) => {
             callback(null, "data_not_valid");
         }
 
-        console.log('Order details: ', event);
-        console.log('eventName', event.Records[0].eventName);
-        console.log('object', event.Records[0].dynamodb);
-        console.log('price', event.Records[0].dynamodb.NewImage.maxPrice.N);
-        console.log('minProductRating', event.Records[0].dynamodb.NewImage.minProductRating.N);
-        console.log('bestOfferType1', event.Records[0].dynamodb.NewImage.bestOfferType.S);
-        console.log('productID', event.Records[0].dynamodb.NewImage.productID.S);
-        console.log('quantity', event.Records[0].dynamodb.NewImage.quantity.N);
+        // console.log('Order details: ', event);
+        // console.log('eventName', event.Records[0].eventName);
+        // console.log('object', event.Records[0].dynamodb);
+        // console.log('price', event.Records[0].dynamodb.NewImage.maxPrice.N);
+        // console.log('minProductRating', event.Records[0].dynamodb.NewImage.minProductRating.N);
+        // console.log('bestOfferType1', event.Records[0].dynamodb.NewImage.bestOfferType.S);
+        // console.log('productID', event.Records[0].dynamodb.NewImage.productID.S);
+        // console.log('quantity', event.Records[0].dynamodb.NewImage.quantity.N);
 
         const productIDFromUser = event.Records[0].dynamodb.NewImage.productID.S;
         let dealsForRating;
