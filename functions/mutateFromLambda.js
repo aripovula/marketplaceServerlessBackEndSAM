@@ -16,14 +16,14 @@ exports.handler = (event, context, callback) => {
             callback(null, "data_not_valid");
         }
 
-        // console.log('Order details: ', event);
-        // console.log('eventName', event.Records[0].eventName);
-        // console.log('object', event.Records[0].dynamodb);
-        // console.log('price', event.Records[0].dynamodb.NewImage.maxPrice.N);
-        // console.log('minProductRating', event.Records[0].dynamodb.NewImage.minProductRating.N);
-        // console.log('bestOfferType1', event.Records[0].dynamodb.NewImage.bestOfferType.S);
-        // console.log('productID', event.Records[0].dynamodb.NewImage.productID.S);
-        // console.log('quantity', event.Records[0].dynamodb.NewImage.quantity.N);
+        console.log('Order details: ', event);
+        console.log('eventName', event.Records[0].eventName);
+        console.log('object', event.Records[0].dynamodb);
+        console.log('price', event.Records[0].dynamodb.NewImage.maxPrice.N);
+        console.log('minProductRating', event.Records[0].dynamodb.NewImage.minProductRating.N);
+        console.log('bestOfferType1', event.Records[0].dynamodb.NewImage.bestOfferType.S);
+        console.log('productID', event.Records[0].dynamodb.NewImage.productID.S);
+        console.log('quantity', event.Records[0].dynamodb.NewImage.quantity.N);
 
         const productIDFromUser = event.Records[0].dynamodb.NewImage.productID.S;
         let dealsForRating;
@@ -156,21 +156,23 @@ const trySecondBestOption = (callback, data, dealsForRating, minPrice, minProduc
 }
 
 const findAllHighestRatedOffers = (data) => {
-    let minRating = 0;
-    // find lowest rating
-    data.Items.map((item) => {
-        if (item.lastTenAverageRating >= minRating) {
-            minRating = item.lastTenAverageRating;
-        }
-    });
-    console.log('RATING APPLIED TO BEST OFFER', minRating);
-    // find all at this highest rating
     let highestRatedOffers = [];
-    data.Items.map((item) => {
-        if (item.lastTenAverageRating == minRating) {
-            highestRatedOffers.push(item);
-        }
-    });
+    if (data && data.Items) {
+        let minRating = 0;
+        // find lowest rating
+        data.Items.map((item) => {
+            if (item.lastTenAverageRating >= minRating) {
+                minRating = item.lastTenAverageRating;
+            }
+        });
+        console.log('RATING APPLIED TO BEST OFFER', minRating);
+        // find all at this highest rating
+        data.Items.map((item) => {
+            if (item.lastTenAverageRating == minRating) {
+                highestRatedOffers.push(item);
+            }
+        });
+    }
     return highestRatedOffers;
 }
 
@@ -268,7 +270,8 @@ const findBestOfferWithCustomSettings = (callback, data, minPrice, minProductRat
 }
 
 const addAverageRatingToOffersByCompany = (callback, offersForProduct, dealsForRating) => {
-    console.log('b4 offersForProduct -', offersForProduct, offersForProduct.Items.length);
+    const offersForProductCount = (offersForProduct && offersForProduct.Items) ? offersForProduct.Items.length : 0;
+    console.log('b4 offersForProduct -', offersForProduct, offersForProductCount);
     console.log('b4 dealsForRating -', dealsForRating, dealsForRating.Items.length);
     if (offersForProduct && offersForProduct.Items && dealsForRating && dealsForRating.Items) {
         for (let x = 0; x < offersForProduct.Items.length; x++) {
@@ -376,6 +379,7 @@ const getQueryTextForUpdateOffer = (theOrder, theOffer) => {
             "input": {
                 companyID: theOffer.companyID.S,
                 offerID: theOffer.offerID.S,
+                price: (parseFloat(theOffer.price.N) * ((Math.random() * 0.04) + 0.98)).toFixed(2),
                 available: (parseInt(theOffer.available.N) - parseInt(theOrder.quantity.N))
             }
         }
