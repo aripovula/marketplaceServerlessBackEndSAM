@@ -1,6 +1,7 @@
 const AWS = require('aws-sdk');
 const axios = require('node_modules/axios/lib/axios.js');
 const uuid = require('node_modules/uuid/v4.js');
+const sha256 = require('js-sha256');
 const dynamodb = new AWS.DynamoDB({
     region: process.env.AppSyncRegion,
     apiVersion: '2012-08-10'
@@ -36,7 +37,7 @@ exports.handler = (event, context, callback) => {
                     S: productIDFromUser
                 }
             },
-            ProjectionExpression: "productID, dealID, producerID, productRatingByBuyer, dealTime",
+            // ProjectionExpression: "productID, dealID, producerID, productRatingByBuyer, dealTime, blockchainBlockOfDeal",
         };
 
         dynamodb.query(paramsDeals, function (err, data) {
@@ -120,20 +121,20 @@ const queryDataFindBestOfferAndSendBack = (event, callback, dealsForRating, prod
                     if (!theOffer) theOffer = trySecondBestOption(callback, data, dealsForRating, minPrice, minProductRating, maxPriceFromUser, quantityDemanded, secondBestOfferType);
                 }
                 if (theOrder && theOffer) {
-                    invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal');
+                    invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal', dealsForRating);
                 } else {
                     console.log("offer_or_order_not_valid");
                     callback(null, "offer_or_order_not_valid");
                 }
 
             } else {
-                invokeMutationsForGivenType(event, theOrder, theOffer, 'Insufficient');
+                invokeMutationsForGivenType(event, theOrder, theOffer, 'Insufficient', dealsForRating);
             }
         } else if (data.Items && data.Items.length === 0) {
             console.log("offer_query_data_not_valid data -", data);
             console.log("offer_query_data_not_valid data.Items", data.Items.length);
             console.log("offer_query_data_not_valid data.Items", data.Items);
-            invokeMutationsForGivenType(event, theOrder, null, 'NotOffered');
+            invokeMutationsForGivenType(event, theOrder, null, 'NotOffered', dealsForRating);
         } else {
             console.log("offer_query-data_not_valid-data -", data);
             if (data.Items) {
@@ -323,7 +324,7 @@ const getLastTenAverageRating = (coID, productID, dealsForRating) => {
     return theRating;
 }
 
-const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationType) => {
+const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationType, dealsForRating) => {
     AWS.config.update({
         region: process.env.AppSyncRegion,
         credentials: new AWS.Credentials({
@@ -332,12 +333,14 @@ const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationTy
         })
     });
 
+    const block = blockchainTheDeal(theOrder, theOffer, dealsForRating);
+
     switch (mutationType) {
         case 'NewDeal':
-            await invokeAppSyncWitCustomBody(getQueryTextForNewDeal(theOrder, theOffer));
+            await invokeAppSyncWitCustomBody(getQueryTextForNewDeal(theOrder, theOffer, block));
             await invokeAppSyncWitCustomBody(getQueryTextForUpdateOffer(theOrder, theOffer));
             await invokeAppSyncWitCustomBody(getQueryTextForUpdateOrder(theOrder, theOffer));
-            await invokeAppSyncWitCustomBody(getQueryTextForNotifySeller(theOrder, theOffer));
+            await invokeAppSyncWitCustomBody(getQueryTextForNotifySeller(theOrder, theOffer, block));
             break;
         case 'Insufficient':
             await invokeAppSyncWitCustomBody(getQueryTextForInsufficientStock(theOrder, theOffer));
@@ -349,13 +352,13 @@ const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationTy
     return;
 };
 
-const getQueryTextForNewDeal = (theOrder, theOffer) => {
+const getQueryTextForNewDeal = (theOrder, theOffer, block) => {
     return JSON.stringify({
-        "query": "mutation ($input: CreateDealInput!) { createDeal(input: $input){  productID, dealID, orderID, buyerID, producerID, dealTime, dealPrice, dealQuantity, productRatingByBuyer, blockchainBlockID, dealStatus, blockchainBlockStatus } }",
+        "query": "mutation ($input: CreateDealInput!) { createDeal(input: $input){  productID, dealID, orderID, buyerID, producerID, dealTime, dealPrice, dealQuantity, productRatingByBuyer, blockchainBlockID, blockchainBlockOfDeal, dealStatus, blockchainBlockStatus } }",
         "variables": {
             "input": {
                 productID: theOrder.productID.S,
-                dealID: new Date() * 1, // uuid(),
+                dealID: new Date('January 1, 2022 00:00:00') - new Date(),
                 orderID: theOrder.orderID.S,
                 buyerID: theOrder.companyID.S,
                 producerID: theOffer.companyID.S,
@@ -364,6 +367,7 @@ const getQueryTextForNewDeal = (theOrder, theOffer) => {
                 dealQuantity: theOrder.quantity.N,
                 productRatingByBuyer: null,
                 blockchainBlockID: "A",
+                blockchainBlockOfDeal: JSON.stringify(block.hash),
                 dealStatus: "DEAL_MADE",
                 blockchainBlockStatus: "INITIATED",
                 productRatingByBuyer: ((Math.random() * (4.8 - 4.4)) + 4.4).toFixed(2)
@@ -400,15 +404,15 @@ const getQueryTextForUpdateOrder = (theOrder, theOffer) => {
     });
 };
 
-const getQueryTextForNotifySeller = (theOrder, theOffer) => {
+const getQueryTextForNotifySeller = (theOrder, theOffer, block) => {
     return JSON.stringify({
         "query": "mutation ($input: CreateNotificationInput!) { createNotification(input: $input){companyID,notificationID,notificationTextRegular,notificationTextHighlighted } }",
         "variables": {
             "input": {
                 companyID: theOrder.companyID.S,
                 notificationID: new Date() * 1, // uuid(),
-                notificationTextRegular: theOrder.quantity.N + ' were sold at ' + theOffer.price.N,
-                notificationTextHighlighted: 'status: confirmed'
+                notificationTextRegular: 'none',
+                notificationTextHighlighted: JSON.stringify(block)
             }
         }
     });
@@ -459,3 +463,38 @@ const invokeAppSyncWitCustomBody = async (theBody) => {
     });
     return result;
 };
+
+const blockchainTheDeal = (theOrder, theOffer, dealsForRating) => {
+    console.log('dealsForRating-', dealsForRating);
+    const blankBlock = {
+        index: 0,
+        previousHash: "",
+        hash: "",
+        nonce: 0,
+        transactions: []
+    }
+
+    const block = blankBlock;
+
+    const transaction = {
+        buyerID: theOrder.companyID.S,
+        sellerID: theOffer.companyID.S,
+        quantity: theOrder.quantity.N,
+        price: theOffer.price.N,
+        productID: theOrder.productID.S
+    }
+
+    const transactions = [...dealsForRating.Items, transaction];
+    console.log('transaction, transactions', transaction, transactions);
+
+    if ((dealsForRating.Items && dealsForRating.Items.length == 0) || !dealsForRating.Items) {
+        block.previousHash = "0000000000000000";
+        block.hash = sha256(JSON.stringify(transactions) + block.index + block.previousHash + block.nonce);
+    } else if (dealsForRating.Items && dealsForRating.Items.length > 0) {
+        let previousBlock = dealsForRating.Items[0].blockchainBlockOfDeal.S;
+        block.index = dealsForRating.Items.length;
+        block.previousHash = previousBlock;
+        block.hash = sha256(JSON.stringify(transactions) + block.index + block.previousHash + block.nonce);
+    }
+    return block
+}
