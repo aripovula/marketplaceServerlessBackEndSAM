@@ -410,8 +410,8 @@ const getQueryTextForNotifySeller = (theOrder, theOffer, block) => {
         "variables": {
             "input": {
                 companyID: theOrder.companyID.S,
-                notificationID: new Date() * 1, // uuid(),
-                notificationTextRegular: 'none',
+                notificationID: new Date('January 1, 2022 00:00:00') - new Date(),
+                notificationTextRegular: 'new blockchain block received',
                 notificationTextHighlighted: JSON.stringify(block)
             }
         }
