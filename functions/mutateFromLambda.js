@@ -104,9 +104,7 @@ const queryDataFindBestOfferAndSendBack = (event, callback, dealsForRating, prod
             let offerID;
             console.log('data b4 available filter ', data);
             // const NewItems = ;
-            data = {
-                Items: data.Items.filter((item) => parseInt(item.available.N) >= quantityDemanded)
-            }
+            data = { Items: data.Items.filter((item) => parseInt(item.available.N) >= quantityDemanded) }
             console.log('data after available filter ', data);
             if (data.Items && data.Items.length > 0) {
                 if (bestOfferType === 'CHEAPEST') {
@@ -124,7 +122,8 @@ const queryDataFindBestOfferAndSendBack = (event, callback, dealsForRating, prod
                     invokeMutationsForGivenType(event, theOrder, theOffer, 'NewDeal', dealsForRating);
                 } else {
                     console.log("offer_or_order_not_valid");
-                    callback(null, "offer_or_order_not_valid");
+                    invokeMutationsForGivenType(event, theOrder, null, 'NoneFound', dealsForRating);
+                    // callback(null, "offer_or_order_not_valid");
                 }
 
             } else {
@@ -200,16 +199,24 @@ const findCheapestOffer = (callback, data, dealsForRating, minPrice, quantityDem
     let theOffer;
     // find the cheapest price
     let cheapestOffers = findAllCheapestOffers(data);
-
+    let cheapestHighestRated;
+    console.log("cheapestOffers 1-", cheapestOffers);
     // if one - return cheapest one
     if (cheapestOffers.length == 1) {
         theOffer = cheapestOffers[0];
         // if more than one - select cheapest one with highest rating
     } else if (cheapestOffers.length > 1) {
-        cheapestOffers = addAverageRatingToOffersByCompany(callback, cheapestOffers, dealsForRating);
-        cheapestOffers = findAllHighestRatedOffers(cheapestOffers);
-        theOffer = cheapestOffers[0];
+        cheapestHighestRated = addAverageRatingToOffersByCompany(callback, cheapestOffers, dealsForRating);
+        console.log("cheapestOffers 2-", cheapestHighestRated);
+        cheapestHighestRated = findAllHighestRatedOffers(cheapestHighestRated);
+        console.log("cheapestOffers 3-", cheapestHighestRated);
+        if (cheapestHighestRated.length > 0) {
+            theOffer = cheapestHighestRated[0];
+        } else {
+            theOffer = cheapestOffers[0];
+        }
     }
+    console.log("theOffer4-", theOffer);
     return theOffer;
 }
 
@@ -223,9 +230,7 @@ const findCheapestOfferWithMinRating = (callback, data, minPrice, minProductRati
         data.Items.map((item) => {
             console.log('in filter B4 - item.lastTenAverageRating, minProductRating', item.lastTenAverageRating, item.lastTenAverageRating.S, minProductRating);
         });
-        data = {
-            Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating)
-        }
+        data = { Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating) }
         console.log('in filter After - data.Items.length', data.Items.length);
         data.Items.map((item) => {
             console.log('in filter After - item.lastTenAverageRating, minProductRating', item.lastTenAverageRating, minProductRating);
@@ -237,9 +242,7 @@ const findCheapestOfferWithMinRating = (callback, data, minPrice, minProductRati
 
 const findHighestRatedOffer = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
     let theOffer;
-    data = {
-        Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser)
-    };
+    data = { Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser) };
     data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
     // find the highest rating among offers
     let highestRatedOffers = findAllHighestRatedOffers(data);
@@ -258,13 +261,9 @@ const findHighestRatedOffer = (callback, data, minPrice, minProductRating, maxPr
 const findBestOfferWithCustomSettings = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
     let theOffer;
     if (data && data.Items && dealsForRating && dealsForRating.Items) {
-        data = {
-            Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser)
-        };
+        data = { Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser) };
         data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
-        data = {
-            Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating)
-        };
+        data = { Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating) };
         theOffer = findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
     }
     return theOffer;
@@ -333,10 +332,10 @@ const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationTy
         })
     });
 
-    const block = blockchainTheDeal(theOrder, theOffer, dealsForRating);
 
     switch (mutationType) {
         case 'NewDeal':
+            const block = blockchainTheDeal(theOrder, theOffer, dealsForRating);
             await invokeAppSyncWitCustomBody(getQueryTextForNewDeal(theOrder, theOffer, block));
             await invokeAppSyncWitCustomBody(getQueryTextForUpdateOffer(theOrder, theOffer));
             await invokeAppSyncWitCustomBody(getQueryTextForUpdateOrder(theOrder, theOffer));
@@ -347,6 +346,9 @@ const invokeMutationsForGivenType = async (event, theOrder, theOffer, mutationTy
             break;
         case 'NotOffered':
             await invokeAppSyncWitCustomBody(getQueryTextForProductNotOffered(theOrder, theOffer));
+            break;
+        case 'NoneFound':
+            await invokeAppSyncWitCustomBody(getQueryTextForNoneFound(theOrder));
             break;
     }
     return;
@@ -440,6 +442,20 @@ const getQueryTextForProductNotOffered = (theOrder, theOffer) => {
                 companyID: theOrder.companyID.S,
                 orderID: theOrder.orderID.S,
                 note: "product not offered",
+                status: "REJECTED"
+            }
+        }
+    });
+};
+
+const getQueryTextForNoneFound = (theOrder) => {
+    return JSON.stringify({
+        "query": "mutation ($input: UpdateOrderInput!) { updateOrder(input: $input){companyID,orderID,productID,product{id,name,modelNo,specificationURL,imageURL,lastTenRatingAverage},status,maxPrice,quantity,bestOfferType,secondBestOfferType,minProductRating,isCashPayment,dealPrice,note } }",
+        "variables": {
+            "input": {
+                companyID: theOrder.companyID.S,
+                orderID: theOrder.orderID.S,
+                note: "none for these params",
                 status: "REJECTED"
             }
         }
