@@ -104,7 +104,9 @@ const queryDataFindBestOfferAndSendBack = (event, callback, dealsForRating, prod
             let offerID;
             console.log('data b4 available filter ', data);
             // const NewItems = ;
-            data = { Items: data.Items.filter((item) => parseInt(item.available.N) >= quantityDemanded) }
+            data = {
+                Items: data.Items.filter((item) => parseInt(item.available.N) >= quantityDemanded)
+            }
             console.log('data after available filter ', data);
             if (data.Items && data.Items.length > 0) {
                 if (bestOfferType === 'CHEAPEST') {
@@ -230,7 +232,9 @@ const findCheapestOfferWithMinRating = (callback, data, minPrice, minProductRati
         data.Items.map((item) => {
             console.log('in filter B4 - item.lastTenAverageRating, minProductRating', item.lastTenAverageRating, item.lastTenAverageRating.S, minProductRating);
         });
-        data = { Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating) }
+        data = {
+            Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating)
+        }
         console.log('in filter After - data.Items.length', data.Items.length);
         data.Items.map((item) => {
             console.log('in filter After - item.lastTenAverageRating, minProductRating', item.lastTenAverageRating, minProductRating);
@@ -242,7 +246,9 @@ const findCheapestOfferWithMinRating = (callback, data, minPrice, minProductRati
 
 const findHighestRatedOffer = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
     let theOffer;
-    data = { Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser) };
+    data = {
+        Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser)
+    };
     data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
     // find the highest rating among offers
     let highestRatedOffers = findAllHighestRatedOffers(data);
@@ -261,9 +267,13 @@ const findHighestRatedOffer = (callback, data, minPrice, minProductRating, maxPr
 const findBestOfferWithCustomSettings = (callback, data, minPrice, minProductRating, maxPriceFromUser, dealsForRating, quantityDemanded) => {
     let theOffer;
     if (data && data.Items && dealsForRating && dealsForRating.Items) {
-        data = { Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser) };
+        data = {
+            Items: data.Items.filter((item) => parseFloat(item.price.N) <= maxPriceFromUser)
+        };
         data = addAverageRatingToOffersByCompany(callback, data, dealsForRating);
-        data = { Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating) };
+        data = {
+            Items: data.Items.filter((item) => item.lastTenAverageRating >= minProductRating)
+        };
         theOffer = findCheapestOffer(callback, data, dealsForRating, minPrice, quantityDemanded);
     }
     return theOffer;
@@ -368,7 +378,7 @@ const getQueryTextForNewDeal = (theOrder, theOffer, block) => {
                 dealPrice: theOffer.price.N,
                 dealQuantity: theOrder.quantity.N,
                 productRatingByBuyer: null,
-                blockchainBlockID: "A",
+                blockchainBlockID: JSON.stringify(block.index),
                 blockchainBlockOfDeal: JSON.stringify(block.hash),
                 dealStatus: "DEAL_MADE",
                 blockchainBlockStatus: "INITIATED",
@@ -413,7 +423,7 @@ const getQueryTextForNotifySeller = (theOrder, theOffer, block) => {
             "input": {
                 companyID: theOrder.companyID.S,
                 notificationID: new Date('January 1, 2022 00:00:00') - new Date(),
-                notificationTextRegular: 'new blockchain block received',
+                notificationTextRegular: 'new blockchain block - index #' + JSON.stringify(block.index),
                 notificationTextHighlighted: JSON.stringify(block)
             }
         }
@@ -487,6 +497,7 @@ const blockchainTheDeal = (theOrder, theOffer, dealsForRating) => {
         previousHash: "",
         hash: "",
         nonce: 0,
+        productID: '',
         transactions: []
     }
 
@@ -506,11 +517,13 @@ const blockchainTheDeal = (theOrder, theOffer, dealsForRating) => {
     if ((dealsForRating.Items && dealsForRating.Items.length == 0) || !dealsForRating.Items) {
         block.previousHash = "0000000000000000";
         block.hash = sha256(JSON.stringify(transactions) + block.index + block.previousHash + block.nonce);
+        block.productID = theOrder.productID.S;
     } else if (dealsForRating.Items && dealsForRating.Items.length > 0) {
         let previousBlock = dealsForRating.Items[0].blockchainBlockOfDeal.S;
         block.index = dealsForRating.Items.length;
         block.previousHash = previousBlock;
         block.hash = sha256(JSON.stringify(transactions) + block.index + block.previousHash + block.nonce);
+        block.productID = theOrder.productID.S;
     }
     return block
 }
